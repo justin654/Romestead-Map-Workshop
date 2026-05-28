@@ -17,10 +17,10 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up .NET 8
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
 
@@ -59,7 +59,7 @@ jobs:
 
       - name: Upload to GitHub release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             MapWorkshop-win-x64-${{ steps.version.outputs.version }}.zip
@@ -70,7 +70,7 @@ jobs:
 
       - name: Upload artifact (manual runs)
         if: github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: MapWorkshop-win-x64-${{ steps.version.outputs.version }}
           path: MapWorkshop-win-x64-${{ steps.version.outputs.version }}.zip
