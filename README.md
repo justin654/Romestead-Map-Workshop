@@ -1,8 +1,12 @@
 # Romestead Map Workshop
 
+![Romestead Map Workshop](docs/screenshot.png)
+
+*v0.1 preview - feedback welcome, not a UI expert.*
+
 Unofficial map editor for [Romestead](https://store.steampowered.com/app/1805320/Romestead/).
 Rips your game's `Content/` into a local workspace, converts XNB textures to PNG,
-fixes tileset paths, previews maps, and opens them in Tiled — without modifying
+fixes tileset paths, previews maps, and opens them in Tiled - without modifying
 your game install.
 
 > **Preview (v0.1):** Map packing / in-game mod install is not included yet. You can
@@ -13,10 +17,10 @@ your game install.
 - **Status pills** showing whether you've ripped the game Content, converted
   XNB textures to PNG, fixed tileset paths, and have Tiled installed.
 - **Searchable map tree** rooted at your ripped `maps/` folder.
-- **In-app preview** — composites tile layers from `.tsx` tilesets *and* image
+- **In-app preview** - composites tile layers from `.tsx` tilesets *and* image
   layers, matching how Tiled renders the map. Handles CSV and base64+zlib/gzip
   layer encodings, plus tile flip flags.
-- **One-click "Open in Tiled"** — automatically runs XNB→PNG conversion and
+- **One-click "Open in Tiled"** - automatically runs XNB→PNG conversion and
   tileset-path repair before launching Tiled, so the map opens with all
   tilesets resolved.
 - **Streamed log + progress bar** for long ops (full rips, batch xnb conversion).
@@ -25,9 +29,9 @@ your game install.
 
 - Windows 10 / 11 (64-bit)
 - [Romestead](https://store.steampowered.com/app/1805320/Romestead/) installed
-- [Tiled](https://www.mapeditor.org/) (free) — needed to actually edit maps
+- [Tiled](https://www.mapeditor.org/) (free) - needed to actually edit maps
 
-The [release zip](../../releases) is self-contained — no .NET install required.
+The [release zip](../../releases) is self-contained.
 `xnbcli.exe` is downloaded automatically from
 [LeonBlade/xnbcli](https://github.com/LeonBlade/xnbcli) the first time you
 need it.
@@ -41,19 +45,19 @@ need it.
 
 On first launch the tool auto-detects your Romestead install via Steam.
 If it can't find it (non-Steam install, unusual library folder), a folder
-picker pops up — point it at the directory containing `Romestead.exe`.
+picker pops up - point it at the directory containing `Romestead.exe`.
 
 The choice is remembered in `%LOCALAPPDATA%\Romestead.MapWorkshop\config.json`.
 You can change it later with the **Game folder...** button.
 
 ## Typical workflow
 
-1. **Rip game Content** — choose a profile and click *Rip*:
+1. **Rip game Content** - choose a profile and click *Rip*:
    - `MapAuthor`: maps + tilesets + media/tiles + media/map_backgrounds (smallest)
    - `Interiors`: same but only interiors_new and building_exteriors maps
    - `Full`: the entire Content tree (~1.5 GB)
 2. **Pick a map** on the left, double-check the preview on the right.
-3. **Open in Tiled** — Map Workshop converts any pending XNBs, fixes any
+3. **Open in Tiled** - Map Workshop converts any pending XNBs, fixes any
    broken tileset paths, then launches Tiled with the map.
 4. Edit + save in Tiled.
 
@@ -95,7 +99,7 @@ Or, if you'd rather not deal with that, build from source yourself.
 
 Map Workshop is released under the [MIT License](LICENSE) (Copyright (c) 2026 Justin).
 
-- **This license applies only to Map Workshop** — its source code and distributed
+- **This license applies only to Map Workshop** - its source code and distributed
   binary. It does not grant rights to Romestead, its trademarks, or any game
   assets (maps, textures, audio, etc.).
 - **Ripping Content** copies files from your own game install into a local workspace
