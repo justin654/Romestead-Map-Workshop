@@ -80,8 +80,8 @@ Nothing is written inside your game folder.
 Requires the .NET 8 SDK.
 
 ```sh
-git clone https://github.com/<you>/RomesteadMapWorkshop.git
-cd RomesteadMapWorkshop
+git clone https://github.com/justin654/Romestead-Map-Workshop.git
+cd Romestead-Map-Workshop
 dotnet build -c Debug          # quick iteration
 dotnet publish -c Release      # self-contained single-file exe (default in csproj)
 ```
@@ -90,6 +90,27 @@ The published binary lands at
 `bin/Release/net8.0-windows/win-x64/publish/MapWorkshop.exe`.
 
 `publish.ps1` is a one-line convenience wrapper around `dotnet publish`.
+
+## Publishing a GitHub release
+
+The workflow in `.github/workflows/release.yml` builds the Windows zip and attaches it
+to a GitHub **Release**. It does **not** run on every push to `master` — only when you:
+
+1. **Tag a release** (recommended for community downloads):
+
+   ```sh
+   git tag v0.1.0
+   git push origin v0.1.0
+   ```
+
+   Use a `v`-prefixed semver tag (`v0.1.0`, `v1.2.3`, …). After the workflow finishes,
+   check the [Releases](../../releases) page for `MapWorkshop-win-x64-0.1.0.zip`.
+
+2. **Or run manually:** GitHub → **Actions** → **Release** → **Run workflow**. That
+   uploads a zip under **Artifacts** on the run (not on the Releases page).
+
+Until you do one of those, the Actions tab will show **0 workflow runs** even though
+the workflow file is present — that is expected, not a broken `.github` folder.
 
 ## Defender false positives
 
