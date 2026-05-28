@@ -1,15 +1,12 @@
 # Romestead Map Workshop
 
-A community map-editing tool for [Romestead](https://store.steampowered.com/app/1805320/Romestead/).
-It rips the game's `Content/` tree into a clean working folder, converts the XNB
-textures to PNG, fixes tileset references, and launches Tiled with everything
-pointing at the right place.
+Unofficial map editor for [Romestead](https://store.steampowered.com/app/1805320/Romestead/).
+Rips your game's `Content/` into a local workspace, converts XNB textures to PNG,
+fixes tileset paths, previews maps, and opens them in Tiled — without modifying
+your game install.
 
-> **Note:** Standalone preview build by [justin654](https://github.com/justin654).
-> Mod packing (install edited maps as a mod) is not in this release yet. A Romestead
-> mod loader exists for development but is not published for general use; Pack will
-> return in Map Workshop when that loader is ready to share. Until then you can rip,
-> preview, and edit maps in Tiled.
+> **Preview (v0.1):** Map packing / in-game mod install is not included yet. You can
+> rip, preview, and edit in [Tiled](https://www.mapeditor.org/) today.
 
 ## Features
 
@@ -30,10 +27,7 @@ pointing at the right place.
 - [Romestead](https://store.steampowered.com/app/1805320/Romestead/) installed
 - [Tiled](https://www.mapeditor.org/) (free) — needed to actually edit maps
 
-If you grabbed the *self-contained* release you don't need .NET installed.
-If you grabbed the framework-dependent build you need the
-[.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0).
-
+The [release zip](../../releases) is self-contained — no .NET install required.
 `xnbcli.exe` is downloaded automatically from
 [LeonBlade/xnbcli](https://github.com/LeonBlade/xnbcli) the first time you
 need it.
@@ -63,9 +57,6 @@ You can change it later with the **Game folder...** button.
    broken tileset paths, then launches Tiled with the map.
 4. Edit + save in Tiled.
 
-(Packing maps into installable mods needs the Romestead mod loader, which is not
-released publicly yet. Map Workshop will add Pack back when it is.)
-
 ## Where things live
 
 | What | Where |
@@ -78,40 +69,15 @@ Nothing is written inside your game folder.
 
 ## Building from source
 
-Requires the .NET 8 SDK.
+Requires the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0).
 
 ```sh
 git clone https://github.com/justin654/Romestead-Map-Workshop.git
 cd Romestead-Map-Workshop
-dotnet build -c Debug          # quick iteration
-dotnet publish -c Release      # self-contained single-file exe (default in csproj)
+dotnet publish -c Release
 ```
 
-The published binary lands at
-`bin/Release/net8.0-windows/win-x64/publish/MapWorkshop.exe`.
-
-`publish.ps1` is a one-line convenience wrapper around `dotnet publish`.
-
-## Publishing a GitHub release
-
-The workflow in `.github/workflows/release.yml` builds the Windows zip and attaches it
-to a GitHub **Release**. It does **not** run on every push to `master` — only when you:
-
-1. **Tag a release** (recommended for community downloads):
-
-   ```sh
-   git tag v0.1.0
-   git push origin v0.1.0
-   ```
-
-   Use a `v`-prefixed semver tag (`v0.1.0`, `v1.2.3`, …). After the workflow finishes,
-   check the [Releases](../../releases) page for `MapWorkshop-win-x64-0.1.0.zip`.
-
-2. **Or run manually:** GitHub → **Actions** → **Release** → **Run workflow**. That
-   uploads a zip under **Artifacts** on the run (not on the Releases page).
-
-Until you do one of those, the Actions tab will show **0 workflow runs** even though
-the workflow file is present — that is expected, not a broken `.github` folder.
+Output: `bin/Release/net8.0-windows/win-x64/publish/MapWorkshop.exe` (or run `.\publish.ps1` for a zipped build under `artifacts/`).
 
 ## Defender false positives
 
