@@ -7,8 +7,8 @@ namespace Romestead.MapWorkshop;
 
 /// <summary>
 /// High-level orchestration backing the Rip / Prepare / Open in Tiled buttons.
-/// Pack-and-sync is intentionally absent from this standalone build because the
-/// Romestead mod loader hasn't shipped yet.
+/// Pack-and-sync is intentionally absent from this standalone build until the
+/// Romestead mod loader is released for public use.
 /// </summary>
 internal static class Operations
 {

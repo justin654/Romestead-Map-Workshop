@@ -5,10 +5,11 @@ It rips the game's `Content/` tree into a clean working folder, converts the XNB
 textures to PNG, fixes tileset references, and launches Tiled with everything
 pointing at the right place.
 
-> **Note:** This is a standalone preview build of Map Workshop. The mod-packing
-> features that integrate with the Romestead mod loader are not in this release
-> yet — they'll come back when the mod loader ships publicly. Until then you can
-> edit maps and preview them; turning edits into installed mods isn't wired up.
+> **Note:** Standalone preview build by [justin654](https://github.com/justin654).
+> Mod packing (install edited maps as a mod) is not in this release yet. A Romestead
+> mod loader exists for development but is not published for general use; Pack will
+> return in Map Workshop when that loader is ready to share. Until then you can rip,
+> preview, and edit maps in Tiled.
 
 ## Features
 
@@ -62,8 +63,8 @@ You can change it later with the **Game folder...** button.
    broken tileset paths, then launches Tiled with the map.
 4. Edit + save in Tiled.
 
-(The "turn this into a mod" step requires the Romestead mod loader, which is
-not yet released. Once it is, Map Workshop will get its Pack feature back.)
+(Packing maps into installable mods needs the Romestead mod loader, which is not
+released publicly yet. Map Workshop will add Pack back when it is.)
 
 ## Where things live
 
@@ -126,6 +127,16 @@ Or, if you'd rather not deal with that, build from source yourself.
 
 ## License
 
-[MIT] (LICENSE).
-Romestead is a trademark of its respective owner; this is an
-unofficial community tool.
+Map Workshop is released under the [MIT License](LICENSE) (Copyright (c) 2026 Justin).
+
+- **This license applies only to Map Workshop** — its source code and distributed
+  binary. It does not grant rights to Romestead, its trademarks, or any game
+  assets (maps, textures, audio, etc.).
+- **Ripping Content** copies files from your own game install into a local workspace
+  for personal editing. Do not redistribute ripped game files; follow Romestead's
+  terms and your platform's rules.
+- **Third-party tools:** [xnbcli](https://github.com/LeonBlade/xnbcli) (MIT) and
+  [Tiled](https://www.mapeditor.org/) have their own licenses.
+
+Romestead is a trademark of its respective owner. This is an unofficial fan tool
+and is not affiliated with or endorsed by the game developers.
