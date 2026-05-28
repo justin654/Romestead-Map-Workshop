@@ -1,0 +1,23 @@
+# Build output
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# Publish output (built artifacts shipped via releases, not committed)
+publish/
+
+# Rider / VS Code
+.idea/
+.vscode/
+
+# Local-only files
+*.local.json
+config.json
+
+# OS / editor noise
+Thumbs.db
+.DS_Store
+*.swp
+*~
