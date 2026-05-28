@@ -1,6 +1,6 @@
 # Romestead Map Workshop
 
-A community map-editing tool for [Romestead](https://store.steampowered.com/app/2161730/Romestead/).
+A community map-editing tool for [Romestead](https://store.steampowered.com/app/1805320/Romestead/).
 It rips the game's `Content/` tree into a clean working folder, converts the XNB
 textures to PNG, fixes tileset references, and launches Tiled with everything
 pointing at the right place.
@@ -26,7 +26,7 @@ pointing at the right place.
 ## Requirements
 
 - Windows 10 / 11 (64-bit)
-- [Romestead](https://store.steampowered.com/app/2161730/Romestead/) installed
+- [Romestead](https://store.steampowered.com/app/1805320/Romestead/) installed
 - [Tiled](https://www.mapeditor.org/) (free) — needed to actually edit maps
 
 If you grabbed the *self-contained* release you don't need .NET installed.
@@ -126,5 +126,6 @@ Or, if you'd rather not deal with that, build from source yourself.
 
 ## License
 
-[MIT](LICENSE). Romestead is a trademark of its respective owner; this is an
+[MIT] (LICENSE).
+Romestead is a trademark of its respective owner; this is an
 unofficial community tool.
