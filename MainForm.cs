@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -12,157 +13,218 @@ namespace Romestead.MapWorkshop;
 
 internal sealed class MainForm : Form
 {
+    private const string GitHubUrl = "https://github.com/";
+    private const string TiledUrl = "https://www.mapeditor.org/";
+
     private readonly AppConfig _config;
+    private readonly ToolTip _tips = new() { AutoPopDelay = 12000, InitialDelay = 400, ReshowDelay = 200 };
 
-    // Top status pills
-    private readonly Label _lightRip   = NewPill();
-    private readonly Label _lightXnb   = NewPill();
-    private readonly Label _lightTsx   = NewPill();
-    private readonly Label _lightTiled = NewPill();
+    // ---- Menu bar ----
+    private readonly MenuStrip _menu = new();
+    private readonly ToolStripMenuItem _miChangeGame   = new("Change &game folder...");
+    private readonly ToolStripMenuItem _miOpenWorkspace = new("Open &workspace folder");
+    private readonly ToolStripMenuItem _miExit         = new("E&xit");
+    private readonly ToolStripMenuItem _miRipMap       = new("Rip Content - &MapAuthor (recommended)");
+    private readonly ToolStripMenuItem _miRipInt       = new("Rip Content - &Interiors only");
+    private readonly ToolStripMenuItem _miRipFull      = new("Rip Content - &Full (~1.5 GB)");
+    private readonly ToolStripMenuItem _miRefresh      = new("&Refresh status") { ShortcutKeys = Keys.F5 };
+    private readonly ToolStripMenuItem _miWhereIsTiled = new("Where is &Tiled?");
+    private readonly ToolStripMenuItem _miGitHub       = new("Open &GitHub page");
+    private readonly ToolStripMenuItem _miAbout        = new("&About...");
 
-    // Top action row
-    private readonly ComboBox _profileCombo = new();
-    private readonly Button _btnRip = new() { Text = "Rip game Content" };
-    private readonly Button _btnPrepare = new() { Text = "Prepare for Tiled" };
-    private readonly Button _btnOpenWorkspace = new() { Text = "Open ripped folder" };
-    private readonly Button _btnRefresh = new() { Text = "Refresh" };
-    private readonly Button _btnChangeGame = new() { Text = "Game folder..." };
+    // ---- Top status strip ----
+    private readonly Panel _statusStrip = new();
+    private readonly Label _statusGame = new();
+    private readonly Label _statusRipped = new();
+    private readonly Label _statusXnb = new();
+    private readonly Label _statusTsx = new();
+    private readonly Label _statusTiled = new();
 
-    // Left
+    // ---- Center: Welcome (empty state) ----
+    private readonly Panel _welcome = new();
+    private readonly ComboBox _welcomeProfile = new();
+    private readonly Button _welcomeRipBtn = new() { Text = "Rip game Content" };
+
+    // ---- Center: Workspace (split) ----
+    private readonly SplitContainer _split = new();
     private readonly TextBox _filterBox = new();
     private readonly TreeView _mapTree = new();
+    private readonly ImageList _treeIcons = new() { ImageSize = new Size(16, 16), ColorDepth = ColorDepth.Depth32Bit };
 
-    // Right
+    private readonly Panel _rightPanel = new();
+    private readonly Panel _rightHeader = new();
+    private readonly Label _selectedMapLabel = new();
+    private readonly Label _selectedMapMeta  = new();
     private readonly PictureBox _previewBox = new();
-    private readonly Label _previewMeta = new();
-    private readonly TextBox _tmxBox = new();
-    private readonly Button _btnBrowseTmx = new() { Text = "..." };
-    private readonly Button _btnTiled = new() { Text = "Open in Tiled" };
+    private readonly Panel _rightActions = new();
+    private readonly Button _btnTiled    = new() { Text = "Edit in Tiled" };
     private readonly Button _btnValidate = new() { Text = "Validate paths" };
-    private readonly Button _btnInstallTiled = new() { Text = "Where is Tiled?" };
 
-    // Bottom
-    private readonly ProgressBar _progress = new();
-    private readonly Label _statusLabel = new()
-    {
-        Text = "Ready",
-        Dock = DockStyle.Fill,
-        TextAlign = ContentAlignment.MiddleLeft,
-        Padding = new Padding(8, 0, 0, 0),
-    };
+    // ---- Bottom: collapsible log + progress + status ----
+    private readonly Panel _logContainer = new();
+    private readonly Panel _logHeader = new();
+    private readonly Label _logHeaderLabel = new() { Text = "▲  Log" };
+    private readonly Label _logCopyLink   = new() { Text = "Copy", Cursor = Cursors.Hand };
     private readonly TextBox _logBox = new();
+    private readonly ProgressBar _progress = new();
+    private readonly Panel _bottomStatus = new();
+    private readonly Label _bottomStatusLabel = new() { Text = "Ready" };
 
-    private readonly List<Button> _actionButtons;
+    private const int LogExpandedHeight  = 200;
+    private const int LogCollapsedHeight = 0;
+    private bool _logExpanded = false;
+
     private CancellationTokenSource? _runningCts;
+    private readonly List<Component> _busyTargets;  // disabled during long ops
 
     public MainForm(AppConfig config)
     {
         _config = config;
 
-        Text = $"Romestead Map Workshop  -  {Paths.GameRoot}";
-        ClientSize = new Size(1080, 760);
-        MinimumSize = new Size(960, 640);
+        Text = "Romestead Map Workshop";
+        ClientSize = new Size(1120, 740);
+        MinimumSize = new Size(900, 560);
         StartPosition = FormStartPosition.CenterScreen;
         BackColor = Color.FromArgb(28, 28, 32);
         ForeColor = Color.FromArgb(232, 230, 227);
         Font = new Font("Segoe UI", 9f);
 
-        _actionButtons = new List<Button>
+        _busyTargets = new List<Component>
         {
-            _btnRip, _btnPrepare, _btnOpenWorkspace, _btnRefresh, _btnChangeGame,
-            _btnTiled, _btnValidate, _btnBrowseTmx, _btnInstallTiled,
+            _miChangeGame, _miOpenWorkspace, _miRipMap, _miRipInt, _miRipFull,
+            _miRefresh, _miWhereIsTiled,
+            _welcomeRipBtn, _btnTiled, _btnValidate,
         };
 
-        BuildLayout();
+        BuildTreeIcons();
+        BuildMenu();
+        BuildStatusStrip();
+        BuildBottom();
+        BuildWelcome();
+        BuildWorkspace();
         WireEvents();
+        WireTooltips();
 
         _ = RefreshStatusAndTreeAsync();
-
-        Log("Map Workshop ready.");
-        Log($"  Game:     {Paths.GameRoot}");
-        Log($"  Workspace:{Paths.Workspace}");
-        var tiled = Paths.FindTiledExe();
-        Log(string.IsNullOrEmpty(tiled)
-            ? "  Tiled:    NOT FOUND (install from mapeditor.org)"
-            : $"  Tiled:    {tiled}");
-        Log("");
-        Log("Tip: pick a map on the left, then 'Open in Tiled'. Prep runs automatically.");
     }
 
-    // ---------- Layout ----------
+    // -------------------- Layout --------------------
 
-    private void BuildLayout()
+    private void BuildMenu()
     {
-        var header = new Panel { Dock = DockStyle.Top, Height = 96, BackColor = Color.FromArgb(22, 22, 26) };
-        Controls.Add(header);
+        _menu.BackColor = Color.FromArgb(28, 28, 32);
+        _menu.ForeColor = Color.FromArgb(230, 230, 235);
+        _menu.Renderer = new DarkMenuRenderer();
 
-        header.Controls.Add(new Label
+        var file = new ToolStripMenuItem("&File");
+        file.DropDownItems.AddRange(new ToolStripItem[]
         {
-            Text = "Map Workshop",
-            Font = new Font("Segoe UI", 13f, FontStyle.Bold),
-            Location = new Point(14, 8),
-            Size = new Size(280, 24),
-            ForeColor = Color.FromArgb(240, 240, 245),
-        });
-        header.Controls.Add(new Label
-        {
-            Text = "Rip game Content  ->  XNB to PNG  ->  Edit in Tiled",
-            Location = new Point(16, 34),
-            Size = new Size(600, 16),
-            ForeColor = Color.FromArgb(140, 140, 150),
+            _miChangeGame,
+            _miOpenWorkspace,
+            new ToolStripSeparator(),
+            _miExit,
         });
 
-        SetPill(_lightRip,   16,  60, 130);
-        SetPill(_lightXnb,   150, 60, 160);
-        SetPill(_lightTsx,   314, 60, 160);
-        SetPill(_lightTiled, 478, 60, 140);
-        header.Controls.Add(_lightRip);
-        header.Controls.Add(_lightXnb);
-        header.Controls.Add(_lightTsx);
-        header.Controls.Add(_lightTiled);
-
-        StyleButton(_btnRefresh, new Point(624, 60), new Size(70, 22), Color.FromArgb(50, 50, 58));
-        header.Controls.Add(_btnRefresh);
-
-        header.Controls.Add(new Label
+        var tools = new ToolStripMenuItem("&Tools");
+        tools.DropDownItems.AddRange(new ToolStripItem[]
         {
-            Text = "Profile:",
-            Location = new Point(700, 10),
-            Size = new Size(50, 18),
-            ForeColor = Color.FromArgb(180, 180, 195),
+            _miRipMap,
+            _miRipInt,
+            _miRipFull,
+            new ToolStripSeparator(),
+            _miRefresh,
+            new ToolStripSeparator(),
+            _miWhereIsTiled,
         });
 
-        _profileCombo.Items.AddRange(new object[] { "MapAuthor", "Interiors", "Full" });
-        _profileCombo.SelectedIndex = 0;
-        _profileCombo.DropDownStyle = ComboBoxStyle.DropDownList;
-        _profileCombo.Location = new Point(752, 7);
-        _profileCombo.Size = new Size(120, 22);
-        _profileCombo.BackColor = Color.FromArgb(40, 40, 46);
-        _profileCombo.ForeColor = Color.White;
-        _profileCombo.FlatStyle = FlatStyle.Flat;
-        header.Controls.Add(_profileCombo);
+        var help = new ToolStripMenuItem("&Help");
+        help.DropDownItems.AddRange(new ToolStripItem[]
+        {
+            _miGitHub,
+            _miAbout,
+        });
 
-        StyleButton(_btnRip, new Point(880, 6), new Size(140, 24), Color.FromArgb(60, 90, 140));
-        header.Controls.Add(_btnRip);
+        _menu.Items.AddRange(new ToolStripItem[] { file, tools, help });
+        MainMenuStrip = _menu;
+        Controls.Add(_menu);
+    }
 
-        StyleButton(_btnPrepare,       new Point(700, 36), new Size(140, 22), Color.FromArgb(70, 110, 90));
-        StyleButton(_btnOpenWorkspace, new Point(848, 36), new Size(140, 22), Color.FromArgb(50, 50, 58));
-        header.Controls.Add(_btnPrepare);
-        header.Controls.Add(_btnOpenWorkspace);
+    private void BuildStatusStrip()
+    {
+        _statusStrip.Dock = DockStyle.Top;
+        _statusStrip.Height = 26;
+        _statusStrip.BackColor = Color.FromArgb(22, 22, 26);
+        _statusStrip.Padding = new Padding(10, 4, 10, 4);
 
-        // Bottom (log + progress + status)
-        var bottom = new Panel { Dock = DockStyle.Bottom, Height = 220, BackColor = Color.FromArgb(22, 22, 26) };
-        Controls.Add(bottom);
+        var flow = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            BackColor = Color.Transparent,
+        };
 
-        _progress.Dock = DockStyle.Top;
-        _progress.Height = 6;
+        foreach (var lbl in new[] { _statusGame, _statusRipped, _statusXnb, _statusTsx, _statusTiled })
+        {
+            lbl.AutoSize = true;
+            lbl.Padding = new Padding(0, 2, 18, 0);
+            lbl.ForeColor = Color.FromArgb(190, 190, 200);
+            flow.Controls.Add(lbl);
+        }
+
+        _statusStrip.Controls.Add(flow);
+        Controls.Add(_statusStrip);
+    }
+
+    private void BuildBottom()
+    {
+        // Order matters: deepest-bottom docks first.
+        _bottomStatus.Dock = DockStyle.Bottom;
+        _bottomStatus.Height = 22;
+        _bottomStatus.BackColor = Color.FromArgb(18, 18, 22);
+
+        _bottomStatusLabel.Dock = DockStyle.Fill;
+        _bottomStatusLabel.TextAlign = ContentAlignment.MiddleLeft;
+        _bottomStatusLabel.Padding = new Padding(10, 0, 10, 0);
+        _bottomStatusLabel.ForeColor = Color.FromArgb(150, 200, 150);
+
+        _progress.Dock = DockStyle.Right;
+        _progress.Width = 220;
         _progress.Style = ProgressBarStyle.Continuous;
-        bottom.Controls.Add(_progress);
+        _progress.Visible = false;
 
-        var statusBar = new Panel { Dock = DockStyle.Bottom, Height = 22, BackColor = Color.FromArgb(18, 18, 22) };
-        _statusLabel.ForeColor = Color.FromArgb(160, 200, 160);
-        statusBar.Controls.Add(_statusLabel);
-        bottom.Controls.Add(statusBar);
+        _bottomStatus.Controls.Add(_bottomStatusLabel);
+        _bottomStatus.Controls.Add(_progress);
+        Controls.Add(_bottomStatus);
+
+        // Log container - collapsible.
+        _logContainer.Dock = DockStyle.Bottom;
+        _logContainer.Height = LogCollapsedHeight + 24;   // header only at start
+        _logContainer.BackColor = Color.FromArgb(22, 22, 26);
+
+        _logHeader.Dock = DockStyle.Top;
+        _logHeader.Height = 24;
+        _logHeader.BackColor = Color.FromArgb(34, 34, 40);
+        _logHeader.Cursor = Cursors.Hand;
+
+        _logHeaderLabel.Dock = DockStyle.Left;
+        _logHeaderLabel.AutoSize = false;
+        _logHeaderLabel.Width = 100;
+        _logHeaderLabel.TextAlign = ContentAlignment.MiddleLeft;
+        _logHeaderLabel.Padding = new Padding(10, 0, 0, 0);
+        _logHeaderLabel.ForeColor = Color.FromArgb(200, 200, 215);
+        _logHeaderLabel.Font = new Font("Segoe UI", 9f, FontStyle.Bold);
+        _logHeaderLabel.Cursor = Cursors.Hand;
+
+        _logCopyLink.Dock = DockStyle.Right;
+        _logCopyLink.AutoSize = false;
+        _logCopyLink.Width = 60;
+        _logCopyLink.TextAlign = ContentAlignment.MiddleCenter;
+        _logCopyLink.ForeColor = Color.FromArgb(140, 170, 230);
+
+        _logHeader.Controls.Add(_logHeaderLabel);
+        _logHeader.Controls.Add(_logCopyLink);
+        _logContainer.Controls.Add(_logHeader);
 
         _logBox.Multiline = true;
         _logBox.ReadOnly = true;
@@ -174,41 +236,123 @@ internal sealed class MainForm : Form
         _logBox.ForeColor = Color.FromArgb(200, 220, 200);
         _logBox.Font = new Font("Consolas", 9f);
         _logBox.BorderStyle = BorderStyle.None;
-        bottom.Controls.Add(_logBox);
+        _logBox.Visible = false;
+        _logContainer.Controls.Add(_logBox);
         _logBox.BringToFront();
+        _logHeader.BringToFront();
 
-        // Center split. Must be at the TOP of the form's z-order so WinForms'
-        // reverse-order dock layout processes Fill *last* and shrinks it to the
-        // remaining space (not the entire form).
-        var split = new SplitContainer
+        Controls.Add(_logContainer);
+    }
+
+    private void BuildWelcome()
+    {
+        _welcome.Dock = DockStyle.Fill;
+        _welcome.BackColor = Color.FromArgb(28, 28, 32);
+        _welcome.Visible = false;
+
+        var inner = new Panel
         {
-            Dock = DockStyle.Fill,
-            BackColor = Color.FromArgb(28, 28, 32),
-            FixedPanel = FixedPanel.Panel1,
+            Anchor = AnchorStyles.None,
+            Size = new Size(520, 260),
+            BackColor = Color.Transparent,
         };
-        Controls.Add(split);
-        split.BringToFront();
-        split.Panel1.BackColor = Color.FromArgb(24, 24, 28);
-        split.Panel2.BackColor = Color.FromArgb(28, 28, 32);
-        split.SplitterDistance = 290;
 
-        // Left
+        var title = new Label
+        {
+            Text = "Welcome to Map Workshop",
+            Font = new Font("Segoe UI Light", 22f),
+            ForeColor = Color.FromArgb(240, 240, 245),
+            Location = new Point(0, 0),
+            Size = new Size(520, 40),
+            TextAlign = ContentAlignment.MiddleCenter,
+        };
+
+        var body = new Label
+        {
+            Text = "Pick a profile and click Rip to copy Romestead's Content folder " +
+                   "into a workspace where you can edit maps in Tiled.",
+            Font = new Font("Segoe UI", 10f),
+            ForeColor = Color.FromArgb(190, 190, 200),
+            Location = new Point(0, 50),
+            Size = new Size(520, 60),
+            TextAlign = ContentAlignment.MiddleCenter,
+        };
+
+        var profileLbl = new Label
+        {
+            Text = "Profile:",
+            Location = new Point(150, 130),
+            Size = new Size(60, 22),
+            TextAlign = ContentAlignment.MiddleRight,
+            ForeColor = Color.FromArgb(190, 190, 200),
+        };
+
+        _welcomeProfile.DropDownStyle = ComboBoxStyle.DropDownList;
+        _welcomeProfile.Items.AddRange(new object[] { "MapAuthor", "Interiors", "Full" });
+        _welcomeProfile.SelectedIndex = 0;
+        _welcomeProfile.Location = new Point(216, 128);
+        _welcomeProfile.Size = new Size(154, 24);
+        _welcomeProfile.BackColor = Color.FromArgb(40, 40, 46);
+        _welcomeProfile.ForeColor = Color.White;
+        _welcomeProfile.FlatStyle = FlatStyle.Flat;
+
+        _welcomeRipBtn.Location = new Point(160, 170);
+        _welcomeRipBtn.Size = new Size(200, 40);
+        _welcomeRipBtn.FlatStyle = FlatStyle.Flat;
+        _welcomeRipBtn.BackColor = Color.FromArgb(60, 100, 160);
+        _welcomeRipBtn.ForeColor = Color.White;
+        _welcomeRipBtn.Font = new Font("Segoe UI", 10.5f, FontStyle.Bold);
+
+        var hint = new Label
+        {
+            Text = "MapAuthor copies only maps + tilesets + media (~200 MB). Full copies the entire game Content (~1.5 GB).",
+            Font = new Font("Segoe UI", 8.5f),
+            ForeColor = Color.FromArgb(130, 130, 140),
+            Location = new Point(0, 220),
+            Size = new Size(520, 36),
+            TextAlign = ContentAlignment.MiddleCenter,
+        };
+
+        inner.Controls.AddRange(new Control[] { title, body, profileLbl, _welcomeProfile, _welcomeRipBtn, hint });
+        _welcome.Controls.Add(inner);
+        _welcome.Resize += (_, _) =>
+        {
+            inner.Left = (_welcome.ClientSize.Width - inner.Width) / 2;
+            inner.Top  = Math.Max(40, (_welcome.ClientSize.Height - inner.Height) / 2);
+        };
+
+        Controls.Add(_welcome);
+    }
+
+    private void BuildWorkspace()
+    {
+        _split.Dock = DockStyle.Fill;
+        _split.BackColor = Color.FromArgb(28, 28, 32);
+        _split.FixedPanel = FixedPanel.Panel1;
+        Controls.Add(_split);
+        _split.BringToFront();
+        _split.Panel1.BackColor = Color.FromArgb(24, 24, 28);
+        _split.Panel2.BackColor = Color.FromArgb(28, 28, 32);
+        _split.SplitterDistance = 290;
+
+        // --- Left (map tree + filter)
         var leftHeader = new Label
         {
-            Text = "Maps (workspace\\ripped\\Content\\maps)",
+            Text = "Maps",
             Dock = DockStyle.Top,
-            Height = 22,
+            Height = 24,
             ForeColor = Color.FromArgb(190, 190, 200),
-            Padding = new Padding(6, 4, 0, 0),
+            Padding = new Padding(10, 4, 0, 0),
+            Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
         };
-        split.Panel1.Controls.Add(leftHeader);
+        _split.Panel1.Controls.Add(leftHeader);
 
         _filterBox.Dock = DockStyle.Top;
         _filterBox.BackColor = Color.FromArgb(40, 40, 46);
         _filterBox.ForeColor = Color.White;
         _filterBox.BorderStyle = BorderStyle.FixedSingle;
-        _filterBox.PlaceholderText = "filter...";
-        split.Panel1.Controls.Add(_filterBox);
+        _filterBox.PlaceholderText = "Filter maps...";
+        _split.Panel1.Controls.Add(_filterBox);
         _filterBox.BringToFront();
 
         _mapTree.Dock = DockStyle.Fill;
@@ -218,93 +362,159 @@ internal sealed class MainForm : Form
         _mapTree.HideSelection = false;
         _mapTree.ShowLines = false;
         _mapTree.ShowRootLines = false;
-        split.Panel1.Controls.Add(_mapTree);
+        _mapTree.ImageList = _treeIcons;
+        _mapTree.FullRowSelect = true;
+        _mapTree.ItemHeight = 22;
+        _split.Panel1.Controls.Add(_mapTree);
         _mapTree.BringToFront();
 
-        // Right
-        _previewBox.Location = new Point(12, 8);
-        _previewBox.Size = new Size(380, 280);
+        // --- Right (preview + actions)
+        _rightPanel.Dock = DockStyle.Fill;
+        _rightPanel.BackColor = Color.FromArgb(28, 28, 32);
+        _split.Panel2.Controls.Add(_rightPanel);
+
+        _rightHeader.Dock = DockStyle.Top;
+        _rightHeader.Height = 44;
+        _rightHeader.BackColor = Color.FromArgb(28, 28, 32);
+        _rightHeader.Padding = new Padding(14, 8, 14, 0);
+
+        _selectedMapLabel.Dock = DockStyle.Top;
+        _selectedMapLabel.AutoSize = false;
+        _selectedMapLabel.Height = 22;
+        _selectedMapLabel.Text = "No map selected";
+        _selectedMapLabel.ForeColor = Color.FromArgb(220, 220, 235);
+        _selectedMapLabel.Font = new Font("Segoe UI", 11f, FontStyle.Bold);
+
+        _selectedMapMeta.Dock = DockStyle.Top;
+        _selectedMapMeta.AutoSize = false;
+        _selectedMapMeta.Height = 14;
+        _selectedMapMeta.Text = "";
+        _selectedMapMeta.ForeColor = Color.FromArgb(150, 150, 165);
+        _selectedMapMeta.Font = new Font("Segoe UI", 8.5f);
+
+        _rightHeader.Controls.Add(_selectedMapMeta);
+        _rightHeader.Controls.Add(_selectedMapLabel);
+        _rightPanel.Controls.Add(_rightHeader);
+
+        _rightActions.Dock = DockStyle.Bottom;
+        _rightActions.Height = 56;
+        _rightActions.BackColor = Color.FromArgb(28, 28, 32);
+        _rightActions.Padding = new Padding(14, 10, 14, 12);
+
+        _btnTiled.Dock = DockStyle.Left;
+        _btnTiled.Width = 170;
+        _btnTiled.FlatStyle = FlatStyle.Flat;
+        _btnTiled.BackColor = Color.FromArgb(90, 130, 70);
+        _btnTiled.ForeColor = Color.White;
+        _btnTiled.Font = new Font("Segoe UI", 10f, FontStyle.Bold);
+
+        _btnValidate.Dock = DockStyle.Left;
+        _btnValidate.Width = 130;
+        _btnValidate.FlatStyle = FlatStyle.Flat;
+        _btnValidate.BackColor = Color.FromArgb(70, 70, 80);
+        _btnValidate.ForeColor = Color.White;
+        _btnValidate.Margin = new Padding(8, 0, 0, 0);
+
+        // Add in reverse order because Dock=Left stacks left-to-right by add order.
+        _rightActions.Controls.Add(new Panel { Dock = DockStyle.Left, Width = 8, BackColor = Color.Transparent });
+        _rightActions.Controls.Add(_btnValidate);
+        _rightActions.Controls.Add(new Panel { Dock = DockStyle.Left, Width = 8, BackColor = Color.Transparent });
+        _rightActions.Controls.Add(_btnTiled);
+        _rightPanel.Controls.Add(_rightActions);
+
+        _previewBox.Dock = DockStyle.Fill;
         _previewBox.SizeMode = PictureBoxSizeMode.Zoom;
         _previewBox.BackColor = Color.FromArgb(18, 18, 22);
-        _previewBox.BorderStyle = BorderStyle.FixedSingle;
-        _previewBox.Anchor = AnchorStyles.Top | AnchorStyles.Left;
-        split.Panel2.Controls.Add(_previewBox);
-
-        _previewMeta.Location = new Point(12, 292);
-        _previewMeta.Size = new Size(380, 18);
-        _previewMeta.ForeColor = Color.FromArgb(160, 160, 170);
-        split.Panel2.Controls.Add(_previewMeta);
-
-        split.Panel2.Controls.Add(new Label
+        _previewBox.Margin = new Padding(14, 6, 14, 6);
+        // Wrap in a Panel so we can give it an inset border + padding.
+        var previewWrap = new Panel
         {
-            Text = "Selected TMX:",
-            Location = new Point(410, 8),
-            Size = new Size(100, 18),
-            ForeColor = Color.FromArgb(180, 180, 195),
-        });
-        _tmxBox.Location = new Point(410, 28);
-        _tmxBox.Size = new Size(310, 22);
-        _tmxBox.BackColor = Color.FromArgb(40, 40, 46);
-        _tmxBox.ForeColor = Color.White;
-        _tmxBox.BorderStyle = BorderStyle.FixedSingle;
-        _tmxBox.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-        split.Panel2.Controls.Add(_tmxBox);
-
-        StyleButton(_btnBrowseTmx, new Point(724, 28), new Size(28, 22), Color.FromArgb(50, 50, 58));
-        _btnBrowseTmx.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        split.Panel2.Controls.Add(_btnBrowseTmx);
-
-        StyleButton(_btnTiled,    new Point(410, 64), new Size(140, 32), Color.FromArgb(90, 130, 70));
-        StyleButton(_btnValidate, new Point(560, 64), new Size(120, 32), Color.FromArgb(70, 70, 80));
-        split.Panel2.Controls.Add(_btnTiled);
-        split.Panel2.Controls.Add(_btnValidate);
-
-        StyleButton(_btnInstallTiled, new Point(410, 104), new Size(140, 26), Color.FromArgb(50, 50, 58));
-        StyleButton(_btnChangeGame,   new Point(560, 104), new Size(140, 26), Color.FromArgb(50, 50, 58));
-        split.Panel2.Controls.Add(_btnInstallTiled);
-        split.Panel2.Controls.Add(_btnChangeGame);
+            Dock = DockStyle.Fill,
+            BackColor = Color.FromArgb(28, 28, 32),
+            Padding = new Padding(14, 6, 14, 6),
+        };
+        var previewInner = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(18, 18, 22), BorderStyle = BorderStyle.FixedSingle };
+        previewInner.Controls.Add(_previewBox);
+        previewWrap.Controls.Add(previewInner);
+        _rightPanel.Controls.Add(previewWrap);
+        previewWrap.BringToFront();
     }
 
-    private static Label NewPill() => new()
+    private void BuildTreeIcons()
     {
-        TextAlign = ContentAlignment.MiddleCenter,
-        BackColor = Color.FromArgb(90, 90, 100),
-        ForeColor = Color.White,
-        Font = new Font("Segoe UI", 8f, FontStyle.Bold),
-        BorderStyle = BorderStyle.FixedSingle,
-    };
-
-    private static void SetPill(Label pill, int x, int y, int w)
-    {
-        pill.Location = new Point(x, y);
-        pill.Size = new Size(w, 22);
+        // Render Segoe MDL2 Assets glyphs into tiny bitmaps. Available on Win10+.
+        _treeIcons.Images.Add("folder", GlyphIcon("", Color.FromArgb(220, 195, 110))); // folder
+        _treeIcons.Images.Add("map",    GlyphIcon("", Color.FromArgb(150, 195, 230))); // map/world
     }
 
-    private static void StyleButton(Button b, Point loc, Size size, Color back)
+    private static Bitmap GlyphIcon(string glyph, Color color)
     {
-        b.Location = loc;
-        b.Size = size;
-        b.FlatStyle = FlatStyle.Flat;
-        b.BackColor = back;
-        b.ForeColor = Color.White;
+        var bmp = new Bitmap(16, 16);
+        using var g = Graphics.FromImage(bmp);
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+        using var font = new Font("Segoe MDL2 Assets", 11f, FontStyle.Regular, GraphicsUnit.Pixel);
+        using var brush = new SolidBrush(color);
+        var size = g.MeasureString(glyph, font);
+        g.DrawString(glyph, font, brush,
+            (16 - size.Width) / 2f,
+            (16 - size.Height) / 2f);
+        return bmp;
     }
 
-    // ---------- Events ----------
+    // -------------------- Tooltips --------------------
+
+    private void WireTooltips()
+    {
+        _tips.SetToolTip(_filterBox, "Type to filter the map list. Searches the full relative path.");
+        _tips.SetToolTip(_btnTiled, "Auto-converts XNB textures and repairs tileset paths if needed, then opens the map in Tiled.");
+        _tips.SetToolTip(_btnValidate, "Check the selected TMX for path conventions Romestead expects.");
+        _tips.SetToolTip(_welcomeRipBtn, "Copies the game's Content folder into your workspace so Tiled can read it.");
+        _tips.SetToolTip(_welcomeProfile, "MapAuthor: maps + tilesets + media (smallest). Interiors: only interiors_new + building_exteriors. Full: entire Content tree (~1.5 GB).");
+        _tips.SetToolTip(_logHeaderLabel, "Click to expand/collapse the log");
+        _tips.SetToolTip(_logCopyLink, "Copy the full log to clipboard");
+        _tips.SetToolTip(_statusGame, "Path to your Romestead game install. Use File > Change game folder to update.");
+        _tips.SetToolTip(_statusRipped, "Whether the game's Content tree has been ripped to the workspace.");
+        _tips.SetToolTip(_statusXnb, "Number of XNB textures still needing conversion to PNG.");
+        _tips.SetToolTip(_statusTsx, "Number of .tsx tileset files whose image path doesn't resolve.");
+        _tips.SetToolTip(_statusTiled, "Whether Tiled.exe was found on this machine.");
+    }
+
+    // -------------------- Wire-up --------------------
 
     private void WireEvents()
     {
-        _btnRefresh.Click       += async (_, _) => await RefreshStatusAndTreeAsync();
-        _btnOpenWorkspace.Click += (_, _) => OpenWorkspaceFolder();
-        _btnRip.Click           += async (_, _) => await RipAsync();
-        _btnPrepare.Click       += async (_, _) => await PrepareAsync();
-        _btnChangeGame.Click    += (_, _) => ChangeGameFolder();
-        _filterBox.TextChanged  += (_, _) => PopulateMapTree();
-        _mapTree.AfterSelect    += (_, e) => OnMapSelected(e.Node);
-        _btnBrowseTmx.Click     += (_, _) => BrowseTmx();
-        _btnTiled.Click         += async (_, _) => await OpenInTiledAsync();
-        _btnValidate.Click      += (_, _) => ValidateSelected();
-        _btnInstallTiled.Click  += (_, _) => OpenTiledLocation();
+        _miChangeGame.Click    += (_, _) => ChangeGameFolder();
+        _miOpenWorkspace.Click += (_, _) => OpenWorkspaceFolder();
+        _miExit.Click          += (_, _) => Close();
+
+        _miRipMap.Click  += async (_, _) => await RipAsync(RipProfile.MapAuthor);
+        _miRipInt.Click  += async (_, _) => await RipAsync(RipProfile.Interiors);
+        _miRipFull.Click += async (_, _) => await RipAsync(RipProfile.Full);
+
+        _miRefresh.Click      += async (_, _) => await RefreshStatusAndTreeAsync();
+        _miWhereIsTiled.Click += (_, _) => OpenTiledLocation();
+        _miGitHub.Click       += (_, _) => OpenUrl(GitHubUrl);
+        _miAbout.Click        += (_, _) => ShowAbout();
+
+        _welcomeRipBtn.Click += async (_, _) =>
+        {
+            var profile = Enum.Parse<RipProfile>((string)_welcomeProfile.SelectedItem!);
+            await RipAsync(profile);
+        };
+
+        _filterBox.TextChanged += (_, _) => PopulateMapTree();
+        _mapTree.AfterSelect   += (_, e) => OnMapSelected(e.Node);
+
+        _btnTiled.Click    += async (_, _) => await OpenInTiledAsync();
+        _btnValidate.Click += (_, _) => ValidateSelected();
+
+        _logHeader.Click       += (_, _) => ToggleLog();
+        _logHeaderLabel.Click  += (_, _) => ToggleLog();
+        _logCopyLink.Click     += (_, _) => CopyLog();
     }
+
+    // -------------------- Actions --------------------
 
     private void OpenWorkspaceFolder()
     {
@@ -320,34 +530,29 @@ internal sealed class MainForm : Form
         var picked = GameFolderResolver.Resolve(_config);
         if (string.IsNullOrEmpty(picked))
         {
-            // User cancelled - restore previous.
             _config.GameRoot = prev;
             _config.Save();
             return;
         }
         Paths.SetGameRoot(picked);
-        Text = $"Romestead Map Workshop  -  {picked}";
         Log($"Game folder changed to: {picked}");
         _ = RefreshStatusAndTreeAsync();
     }
 
-    private async Task RipAsync()
+    private async Task RipAsync(RipProfile profile)
     {
-        var profile = Enum.Parse<RipProfile>((string)_profileCombo.SelectedItem!);
         await RunOpAsync($"Rip ({profile})", sink => Ripper.RipAsync(profile, force: true, sink));
-        await RefreshStatusAndTreeAsync();
-    }
-
-    private async Task PrepareAsync()
-    {
-        await RunOpAsync("Prepare", async sink => { await Operations.EnsurePreparedAsync(sink); });
         await RefreshStatusAndTreeAsync();
     }
 
     private async Task OpenInTiledAsync()
     {
         var path = GetSelectedTmx();
-        if (string.IsNullOrEmpty(path)) { ShowInfo("Select a map first."); return; }
+        if (string.IsNullOrEmpty(path))
+        {
+            MessageBox.Show(this, "Pick a map on the left first.", "Map Workshop");
+            return;
+        }
         await RunOpAsync("Open in Tiled", sink => Operations.OpenInTiledAsync(path, sink));
         await RefreshStatusAndTreeAsync();
     }
@@ -355,7 +560,12 @@ internal sealed class MainForm : Form
     private void ValidateSelected()
     {
         var path = GetSelectedTmx();
-        if (string.IsNullOrEmpty(path) || !File.Exists(path)) { Log("Select a TMX first."); return; }
+        if (string.IsNullOrEmpty(path) || !File.Exists(path))
+        {
+            Log("Select a TMX first.");
+            ExpandLog();
+            return;
+        }
         try
         {
             var r = TmxValidator.Validate(path);
@@ -363,8 +573,9 @@ internal sealed class MainForm : Form
             foreach (var w in r.Warnings) Log("  WARN: " + w);
             foreach (var e in r.Errors)   Log("  ERROR: " + e);
             if (r.Errors.Count == 0 && r.Warnings.Count == 0) Log("  OK");
+            ExpandLog();
         }
-        catch (Exception ex) { Log("validate error: " + ex.Message); }
+        catch (Exception ex) { Log("validate error: " + ex.Message); ExpandLog(); }
     }
 
     private void OpenTiledLocation()
@@ -373,69 +584,102 @@ internal sealed class MainForm : Form
         if (!string.IsNullOrEmpty(tiled))
             Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + tiled + "\"") { UseShellExecute = true });
         else
-            Process.Start(new ProcessStartInfo("https://www.mapeditor.org/") { UseShellExecute = true });
+            OpenUrl(TiledUrl);
     }
 
-    private void BrowseTmx()
+    private static void OpenUrl(string url)
     {
-        using var dlg = new OpenFileDialog
-        {
-            Filter = "Tiled map (*.tmx)|*.tmx",
-            InitialDirectory = Directory.Exists(Paths.RippedRoot) ? Paths.RippedRoot : Paths.GameRoot,
-        };
-        if (dlg.ShowDialog(this) == DialogResult.OK)
-        {
-            _tmxBox.Text = dlg.FileName;
-            ShowPreview(dlg.FileName);
-        }
+        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); } catch { }
+    }
+
+    private void ShowAbout()
+    {
+        var ver = typeof(MainForm).Assembly.GetName().Version?.ToString(3) ?? "0.0";
+        MessageBox.Show(this,
+            $"Romestead Map Workshop\nVersion {ver}\n\n" +
+            "Community map-editing tool for Romestead.\n" +
+            "MIT licensed. See LICENSE.\n\n" +
+            $"Workspace: {Paths.Workspace}\n" +
+            $"Game:      {Paths.GameRoot}",
+            "About Map Workshop",
+            MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+
+    // -------------------- Map tree + selection --------------------
+
+    private string? GetSelectedTmx()
+    {
+        if (_mapTree.SelectedNode?.Tag is string s) return s;
+        return null;
     }
 
     private void OnMapSelected(TreeNode? node)
     {
         if (node?.Tag is not string path) return;
-        _tmxBox.Text = path;
+        _selectedMapLabel.Text = Path.GetFileNameWithoutExtension(path);
+        var rel = Path.GetRelativePath(Paths.RippedMaps, path).Replace('\\', '/');
+        _selectedMapMeta.Text = "maps/" + rel.Replace('\\', '/');
         ShowPreview(path);
     }
-
-    // ---------- Status / Tree / Preview ----------
 
     private async Task RefreshStatusAndTreeAsync()
     {
         var status = await Task.Run(WorkspaceStatus.Probe);
         ApplyStatus(status);
-        PopulateMapTree();
+        SetEmptyState(!status.Ripped);
+        if (status.Ripped) PopulateMapTree();
     }
 
     private void ApplyStatus(WorkspaceStatus s)
     {
-        var green  = Color.FromArgb(80, 180, 90);
-        var yellow = Color.FromArgb(210, 170, 60);
-        var red    = Color.FromArgb(200, 70, 70);
-        var grey   = Color.FromArgb(90, 90, 100);
+        var ok   = Color.FromArgb(120, 200, 130);
+        var warn = Color.FromArgb(220, 190, 90);
+        var bad  = Color.FromArgb(220, 110, 110);
+        var muted = Color.FromArgb(150, 150, 165);
 
-        _lightRip.BackColor = s.Ripped ? green : red;
-        _lightRip.Text = s.Ripped ? "Ripped" : "Not ripped";
+        _statusGame.Text     = "Game: " + Truncate(Paths.GameRoot, 60);
+        _statusGame.ForeColor = muted;
 
-        if (!s.Ripped)              { _lightXnb.BackColor = grey;   _lightXnb.Text = "XNB: -"; }
-        else if (s.XnbPending == 0) { _lightXnb.BackColor = green;  _lightXnb.Text = "XNB done"; }
-        else                        { _lightXnb.BackColor = yellow; _lightXnb.Text = $"XNB pending: {s.XnbPending}"; }
+        _statusRipped.Text = s.Ripped ? "Ripped" : "Not ripped";
+        _statusRipped.ForeColor = s.Ripped ? ok : bad;
 
-        if (!s.Ripped)              { _lightTsx.BackColor = grey;   _lightTsx.Text = "Paths: -"; }
-        else if (s.TsxBroken == 0)  { _lightTsx.BackColor = green;  _lightTsx.Text = "Paths OK"; }
-        else                        { _lightTsx.BackColor = yellow; _lightTsx.Text = $"{s.TsxBroken} tsx broken"; }
+        if (!s.Ripped) { _statusXnb.Text = "XNB: n/a"; _statusXnb.ForeColor = muted; }
+        else if (s.XnbPending == 0) { _statusXnb.Text = "XNB ready"; _statusXnb.ForeColor = ok; }
+        else { _statusXnb.Text = $"XNB pending: {s.XnbPending}"; _statusXnb.ForeColor = warn; }
 
-        _lightTiled.BackColor = string.IsNullOrEmpty(s.TiledExe) ? red : green;
-        _lightTiled.Text = string.IsNullOrEmpty(s.TiledExe) ? "Tiled missing" : "Tiled installed";
+        if (!s.Ripped) { _statusTsx.Text = "Paths: n/a"; _statusTsx.ForeColor = muted; }
+        else if (s.TsxBroken == 0) { _statusTsx.Text = "Paths OK"; _statusTsx.ForeColor = ok; }
+        else { _statusTsx.Text = $"{s.TsxBroken} tsx broken"; _statusTsx.ForeColor = warn; }
+
+        if (string.IsNullOrEmpty(s.TiledExe)) { _statusTiled.Text = "Tiled not installed"; _statusTiled.ForeColor = bad; }
+        else                                   { _statusTiled.Text = "Tiled installed";    _statusTiled.ForeColor = ok; }
+    }
+
+    private static string Truncate(string s, int max)
+    {
+        if (s.Length <= max) return s;
+        return s.Substring(0, 3) + "..." + s.Substring(s.Length - (max - 6));
+    }
+
+    private void SetEmptyState(bool empty)
+    {
+        _welcome.Visible = empty;
+        _split.Visible = !empty;
+        if (empty) _welcome.BringToFront();
+        else        _split.BringToFront();
     }
 
     private void PopulateMapTree()
     {
         _mapTree.BeginUpdate();
+        var expanded = new HashSet<string>(_mapTree.Nodes
+            .OfType<TreeNode>()
+            .Where(n => n.IsExpanded)
+            .Select(n => n.Text), StringComparer.OrdinalIgnoreCase);
         _mapTree.Nodes.Clear();
+
         if (!Directory.Exists(Paths.RippedMaps))
         {
-            var n = _mapTree.Nodes.Add("(rip game Content to populate)");
-            n.ForeColor = Color.Gray;
             _mapTree.EndUpdate();
             return;
         }
@@ -456,21 +700,28 @@ internal sealed class MainForm : Form
         foreach (var kv in byDir)
         {
             var dirNode = _mapTree.Nodes.Add(kv.Key);
-            dirNode.ForeColor = Color.FromArgb(180, 180, 195);
+            dirNode.ForeColor = Color.FromArgb(200, 200, 215);
+            dirNode.ImageIndex = 0;
+            dirNode.SelectedImageIndex = 0;
             foreach (var f in kv.Value.OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
             {
                 var leaf = dirNode.Nodes.Add(Path.GetFileNameWithoutExtension(f));
                 leaf.Tag = f;
                 leaf.ForeColor = Color.FromArgb(220, 220, 230);
+                leaf.ImageIndex = 1;
+                leaf.SelectedImageIndex = 1;
             }
             if (filter.Length > 0) dirNode.ExpandAll();
-            else if (kv.Key.Contains("interiors_new", StringComparison.OrdinalIgnoreCase)
+            else if (expanded.Contains(kv.Key)
+                  || kv.Key.Contains("interiors_new", StringComparison.OrdinalIgnoreCase)
                   || kv.Key.Contains("buildings", StringComparison.OrdinalIgnoreCase)
                   || kv.Key.Contains("dungeons", StringComparison.OrdinalIgnoreCase))
                 dirNode.Expand();
         }
         _mapTree.EndUpdate();
     }
+
+    // -------------------- Preview --------------------
 
     private void ShowPreview(string tmxPath)
     {
@@ -479,7 +730,7 @@ internal sealed class MainForm : Form
         {
             Log($"preview error: {ex.GetType().Name}: {ex.Message}");
             try { _previewBox.Image?.Dispose(); _previewBox.Image = null; } catch { }
-            _previewMeta.Text = "(preview failed - see log)";
+            _selectedMapMeta.Text = "(preview failed - see log)";
         }
     }
 
@@ -491,23 +742,16 @@ internal sealed class MainForm : Form
             _previewBox.Image = null;
             old.Dispose();
         }
-        _previewMeta.Text = "";
 
         var info = TmxInfoReader.Read(tmxPath);
         if (info == null) return;
 
-        var meta = info.Width.HasValue
-            ? $"{info.Width} x {info.Height} tiles, tile {info.TileW}x{info.TileH} px"
-            : "";
+        var rel = Path.GetRelativePath(Paths.RippedMaps, tmxPath).Replace('\\', '/');
+        var dims = info.Width.HasValue ? $"  ·  {info.Width}×{info.Height} tiles · {info.TileW}×{info.TileH} px" : "";
+        _selectedMapMeta.Text = "maps/" + rel + dims;
 
         var rendered = TmxRenderer.Render(tmxPath, warn: w => Log($"[preview] {w}"));
-        if (rendered != null)
-        {
-            _previewBox.Image = rendered;
-            meta += (meta.Length > 0 ? "  |  " : "") + "rendered";
-            _previewMeta.Text = meta;
-            return;
-        }
+        if (rendered != null) { _previewBox.Image = rendered; return; }
 
         if (!string.IsNullOrEmpty(info.FirstImagePathAbsolute))
         {
@@ -516,26 +760,60 @@ internal sealed class MainForm : Form
                 using var fs = File.Open(info.FirstImagePathAbsolute, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                 using var temp = Image.FromStream(fs);
                 _previewBox.Image = new Bitmap(temp);
-                meta += (meta.Length > 0 ? "  |  " : "") + Path.GetFileName(info.FirstImagePathAbsolute);
             }
-            catch (Exception ex)
-            {
-                meta += $"  |  (image load failed: {ex.Message})";
-            }
+            catch (Exception ex) { Log("preview load failed: " + ex.Message); }
         }
-        else
-        {
-            meta += "  |  no background image (tile-only or missing)";
-        }
-        _previewMeta.Text = meta;
     }
 
-    // ---------- Operation runner ----------
+    // -------------------- Log panel --------------------
+
+    private void ToggleLog() => SetLogExpanded(!_logExpanded);
+    private void ExpandLog()   { if (!_logExpanded) SetLogExpanded(true); }
+
+    private void SetLogExpanded(bool expanded)
+    {
+        _logExpanded = expanded;
+        _logBox.Visible = expanded;
+        _logContainer.Height = expanded ? LogExpandedHeight + 24 : 24;
+        _logHeaderLabel.Text = expanded ? "▼  Log" : "▲  Log";
+    }
+
+    private void CopyLog()
+    {
+        try
+        {
+            if (_logBox.TextLength > 0)
+                Clipboard.SetText(_logBox.Text);
+        }
+        catch { }
+    }
+
+    public void Log(string line)
+    {
+        if (InvokeRequired) { BeginInvoke(new Action(() => Log(line))); return; }
+        _logBox.AppendText(line + Environment.NewLine);
+        if (_logBox.TextLength > 200_000)
+        {
+            var keep = _logBox.Text.Substring(_logBox.TextLength - 100_000);
+            _logBox.Text = "[log trimmed]\r\n" + keep;
+        }
+        _logBox.SelectionStart = _logBox.TextLength;
+        _logBox.ScrollToCaret();
+    }
+
+    public void SetStatus(string text)
+    {
+        if (InvokeRequired) { BeginInvoke(new Action(() => SetStatus(text))); return; }
+        _bottomStatusLabel.Text = text;
+    }
+
+    // -------------------- Op runner --------------------
 
     private async Task RunOpAsync(string label, Func<IProgressSink, Task> op)
     {
         if (_runningCts != null) { Log("(busy)"); return; }
         SetBusy(true, label);
+        ExpandLog();   // user wants to see what's happening during an op
         _runningCts = new CancellationTokenSource();
         try
         {
@@ -555,38 +833,18 @@ internal sealed class MainForm : Form
     private void SetBusy(bool busy, string op = "")
     {
         Cursor = busy ? Cursors.WaitCursor : Cursors.Default;
+        _progress.Visible = busy;
         _progress.Style = busy ? ProgressBarStyle.Marquee : ProgressBarStyle.Continuous;
         _progress.MarqueeAnimationSpeed = busy ? 30 : 0;
-        _statusLabel.Text = busy ? $"Running: {op}" : "Ready";
-        foreach (var b in _actionButtons) b.Enabled = !busy;
-    }
-
-    private string? GetSelectedTmx()
-    {
-        if (_mapTree.SelectedNode?.Tag is string s) return s;
-        var manual = _tmxBox.Text.Trim();
-        return string.IsNullOrEmpty(manual) ? null : manual;
-    }
-
-    private void ShowInfo(string msg) => MessageBox.Show(this, msg, "Map Workshop");
-
-    public void Log(string line)
-    {
-        if (InvokeRequired) { BeginInvoke(new Action(() => Log(line))); return; }
-        _logBox.AppendText(line + Environment.NewLine);
-        if (_logBox.TextLength > 200_000)
+        _bottomStatusLabel.Text = busy ? $"Running: {op}" : "Ready";
+        foreach (var t in _busyTargets)
         {
-            var keep = _logBox.Text.Substring(_logBox.TextLength - 100_000);
-            _logBox.Text = "[log trimmed]\r\n" + keep;
+            switch (t)
+            {
+                case Control c: c.Enabled = !busy; break;
+                case ToolStripItem i: i.Enabled = !busy; break;
+            }
         }
-        _logBox.SelectionStart = _logBox.TextLength;
-        _logBox.ScrollToCaret();
-    }
-
-    public void SetStatus(string text)
-    {
-        if (InvokeRequired) { BeginInvoke(new Action(() => SetStatus(text))); return; }
-        _statusLabel.Text = text;
     }
 
     private sealed class UiSink : IProgressSink
@@ -596,5 +854,43 @@ internal sealed class MainForm : Form
         public void Log(string line) => _form.Log(line);
         public void Status(string text) => _form.SetStatus("Running: " + text);
         public CancellationToken CancellationToken { get; }
+    }
+
+    // -------------------- Dark menu rendering --------------------
+
+    private sealed class DarkMenuRenderer : ToolStripProfessionalRenderer
+    {
+        public DarkMenuRenderer() : base(new DarkColorTable()) { }
+
+        protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
+        {
+            e.TextColor = e.Item.Enabled
+                ? (e.Item.Selected ? Color.White : Color.FromArgb(230, 230, 235))
+                : Color.FromArgb(120, 120, 130);
+            base.OnRenderItemText(e);
+        }
+
+        protected override void OnRenderArrow(ToolStripArrowRenderEventArgs e)
+        {
+            e.ArrowColor = Color.FromArgb(210, 210, 220);
+            base.OnRenderArrow(e);
+        }
+    }
+
+    private sealed class DarkColorTable : ProfessionalColorTable
+    {
+        public override Color MenuItemSelected            => Color.FromArgb(60, 90, 140);
+        public override Color MenuItemSelectedGradientBegin => Color.FromArgb(60, 90, 140);
+        public override Color MenuItemSelectedGradientEnd   => Color.FromArgb(60, 90, 140);
+        public override Color MenuItemBorder              => Color.FromArgb(60, 90, 140);
+        public override Color MenuItemPressedGradientBegin => Color.FromArgb(36, 36, 42);
+        public override Color MenuItemPressedGradientEnd   => Color.FromArgb(36, 36, 42);
+        public override Color ToolStripDropDownBackground => Color.FromArgb(36, 36, 42);
+        public override Color ImageMarginGradientBegin    => Color.FromArgb(36, 36, 42);
+        public override Color ImageMarginGradientMiddle   => Color.FromArgb(36, 36, 42);
+        public override Color ImageMarginGradientEnd      => Color.FromArgb(36, 36, 42);
+        public override Color MenuBorder                  => Color.FromArgb(60, 60, 70);
+        public override Color SeparatorDark               => Color.FromArgb(60, 60, 70);
+        public override Color SeparatorLight              => Color.FromArgb(40, 40, 46);
     }
 }
